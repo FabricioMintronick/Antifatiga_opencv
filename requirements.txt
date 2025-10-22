@@ -1,0 +1,7 @@
+# === Sistema Antifatiga - Dependencias principales ===
+mediapipe==0.10.21
+opencv-contrib-python==4.11.0.86
+numpy==1.26.4
+protobuf==4.25.8
+paho-mqtt==2.1.0
+matplotlib==3.10.7

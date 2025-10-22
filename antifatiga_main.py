@@ -50,6 +50,12 @@ def main():
     ap.add_argument('--jsonl_path', type=str, default='stream_antifatiga.jsonl')
     ap.add_argument('--show', action='store_true')
 
+    # ---- CONTROLA EL RENDIMIENTO ----
+    ap.add_argument('--frame_skip', type=int, default=2, help='Procesar 1 de cada N frames (reduce carga)')
+    ap.add_argument('--send_interval', type=float, default=0.5, help='Intervalo mínimo de envío en segundos')
+    ap.add_argument('--lowres', action='store_true', help='Usar resolución baja (320x240)')
+
+
     args = ap.parse_args()
 
     # ================================
@@ -63,16 +69,25 @@ def main():
     # 3. INICIALIZACIÓN GENERAL
     # ===========================
     print("[INFO] Inicializando detector...")
-    detector = MediapipeDetector(args.model)
+    detector = MediapipeDetector(args.model, delegate="CPU") #CAMBIAR delegate="NPU" cuando pases a owasys
     print("[INFO] Detector MediaPipe cargado.")
 
     print("[INFO] Inicializando cámara...")
     cap = cv2.VideoCapture(args.device, cv2.CAP_DSHOW)
-    if not cap.isOpened():
-        print("[ERROR] No se pudo abrir la cámara.")
-        return
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH,  args.width)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, args.height)
+
+    # 🔧 Ajustar resolución para rendimiento
+    if args.lowres:
+        cap.set(cv2.CAP_PROP_FRAME_WIDTH,  320)
+        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 240)
+    else:
+        cap.set(cv2.CAP_PROP_FRAME_WIDTH,  args.width)
+        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, args.height)
+
+    print(f"[INFO] Cámara abierta: {int(cap.get(3))}x{int(cap.get(4))}")
+
+    if not args.show:
+        cap.set(cv2.CAP_PROP_FRAME_WIDTH,  320)
+        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 240)
     print("[INFO] Cámara abierta correctamente.")
 
     if args.show:
@@ -139,10 +154,19 @@ def main():
 
     show_perf = True  # Cambia a False si no quieres ver FPS/latencia
 
+    FRAME_SKIP = args.frame_skip
+    SEND_INTERVAL = args.send_interval
+    frame_id = 0
+    last_sent = 0
+
     while True:
         ok, frame = cap.read()
         if not ok:
             time.sleep(0.01)
+            continue
+
+        frame_id += 1
+        if frame_id % FRAME_SKIP != 0:
             continue
 
         estados = []
@@ -168,6 +192,12 @@ def main():
             estados.append("Cámara tapada")
         if low_light:
             estados.append("Poca luz")
+        #Evitar calculos cuando la cámara está oscura o tapada
+        if camera_blocked or low_light:
+            if args.show:
+                cv2.imshow("Antifatiga", cv2.resize(frame, (640,480)))
+            continue
+
 
         # ===== Rostro detectado =====
         lm = detector.detect(frame)
@@ -287,18 +317,22 @@ def main():
                 mouth = lm_px[[78,308,14,13,312,82], :2].astype(int)
 
                 for p in left:
-                    cv2.circle(vis, tuple(p), 2, (0,255,255), -1)
+                    cv2.circle(vis, tuple(p), 1, (0,255,255), 1)
                 for p in right:
-                    cv2.circle(vis, tuple(p), 2, (0,255,255), -1)
+                    cv2.circle(vis, tuple(p), 1, (0,255,255), 1)
                 for p in mouth:
-                    cv2.circle(vis, tuple(p), 2, (255,0,255), -1)
+                    cv2.circle(vis, tuple(p), 1, (255,0,255), 1)
+
 
                 # Texto principal
-                cv2.putText(vis, " | ".join(estados), (18,36),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0,255,255), 2)
+                estado_texto = " | ".join(estados)
+                y0, dy = 25, 22
+                for i, linea in enumerate([estado_texto[i:i+45] for i in range(0, len(estado_texto), 45)]):
+                    cv2.putText(vis, linea, (10, y0 + i*dy),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0,255,255), 1, cv2.LINE_AA)
 
                 # Mostrar FPS y latencia opcional
-                if show_perf:
+                if show_perf and lm is not None:
                     cv2.putText(vis, f"FPS: {fps:.1f}  Latencia: {latency_ms:.1f} ms",
                                 (18,460), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (200,255,200), 1)
 
@@ -323,7 +357,10 @@ def main():
             "low_light": bool(low_light),
             "hand_on_mouth": bool(hand_on_mouth)
         }
-        publish_event(payload)
+        now = time.time()
+        if now - last_sent > SEND_INTERVAL:
+            publish_event(payload)
+            last_sent = now
 
         if args.show and (cv2.waitKey(1) & 0xFF == 27):
             break
