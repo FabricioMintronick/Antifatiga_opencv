@@ -8,7 +8,6 @@ __pycache__/
 *.task
 
 # Archivos grandes o temporales
-models/
 detectors/
 utils/__pycache__/
 *.dll
