@@ -22,3 +22,8 @@ EJECUCIÓN DEL SISTEMA:
 1.	cd C:\desarrollo_antifatiga\
 2.	.\venv-antifatiga\Scripts\activate
 3.	python antifatiga_main.py --backend mediapipe --show
+
+
+
+EN OWASYS EJECUTAR LO SIGUIENTE PARA INSTALAR DEPENDENDICAS:
+ pip install -r requirements.txt
