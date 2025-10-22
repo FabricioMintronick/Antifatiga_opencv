@@ -1,17 +1,2 @@
 # Entorno virtual
 venv-antifatiga/
-__pycache__/
-*.pyc
-*.pyo
-*.log
-*.jsonl
-*.task
-
-# Archivos grandes o temporales
-detectors/
-utils/__pycache__/
-*.dll
-*.pyd
-*.exe
-*.bin
-!models/*.task
